@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Dziennik Tradera</title>
+<meta name="theme-color" content="#1f5f8b">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Dziennik">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Układ: jedna kolumna; podsumowanie, zasady i formularz, potem tabela transakcji. */
+:root{
+  --bg:#f3f5f7; --surface:#ffffff; --fg:#17202b; --muted:#5d6b7a; --line:#d9dfe6;
+  --accent:#1f5f8b; --accent-fg:#ffffff; --win:#18794e; --loss:#c2352b; --warn:#a35d00;
+  --display:"Archivo",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f141a; --surface:#171e26; --fg:#e4e9ef; --muted:#93a1b0; --line:#2a3440;
+  --accent:#6fb0dd; --accent-fg:#0f141a; --win:#4cc38a; --loss:#ff7b6e; --warn:#f0b35a; color-scheme:dark}}
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.5}
+[hidden]{display:none!important}
+.wrap{max-width:1100px;margin:0 auto;padding-block:24px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:28px}
+header{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-end}
+h1{font-family:var(--display);font-weight:800;font-size:clamp(26px,4vw,36px);margin:0;letter-spacing:-.01em}
+h2{font-family:var(--display);font-weight:700;font-size:18px;margin:0 0 12px}
+.status{font-size:13px;color:var(--muted);margin:2px 0 0}
+.status.err{color:var(--loss)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.kpi .l{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.kpi .v{font-family:var(--mono);font-size:22px;font-weight:500;font-variant-numeric:tabular-nums}
+.kpi .h{font-size:12px;color:var(--muted)}
+.pos{color:var(--win)} .neg{color:var(--loss)} .wrn{color:var(--warn)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+@media (max-width:760px){.cols{grid-template-columns:1fr}}
+.cols>*,.wrap>*{min-width:0}
+ol.rules{margin:0;padding-left:20px;display:grid;gap:6px}
+.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+th.n{text-align:right}
+#list tr{cursor:pointer}
+#list tr:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+tr:last-child td{border-bottom:0}
+.pill{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.pill.sl{border-color:var(--loss);color:var(--loss)} .pill.tp{border-color:var(--win);color:var(--win)}
+.pill.nosl{background:var(--loss);color:var(--surface);border-color:var(--loss)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px;display:grid;gap:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+label{display:grid;gap:3px;font-size:12px;color:var(--muted);min-width:0}
+input,select,textarea{font:inherit;font-size:14px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 8px;width:100%;min-width:0;max-width:100%}
+textarea{min-height:60px;resize:vertical}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button,.btn{font:inherit;font-size:14px;font-weight:600;border-radius:6px;padding:8px 14px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer;text-decoration:none}
+button.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+button.danger{color:var(--loss);border-color:var(--loss)}
+button.link{border:0;background:none;padding:4px;color:var(--muted);font-weight:500;text-decoration:underline}
+button:disabled{opacity:.5;cursor:not-allowed}
+.hint{font-size:12.5px;color:var(--muted)}
+.empty{padding:28px;text-align:center;color:var(--muted)}
+.login{max-width:420px;margin:8vh auto 0}
+</style>
+</head>
+<body>
+
+<!-- Ekran: brak konfiguracji -->
+<div class="wrap" id="v-config" hidden>
+  <div class="card login">
+    <h1>Dziennik Tradera</h1>
+    <p>Aplikacja nie jest jeszcze połączona z bazą. Uzupełnij plik <code>config.js</code> danymi z Supabase (instrukcja w pliku INSTRUKCJA.md).</p>
+  </div>
+</div>
+
+<!-- Ekran: logowanie -->
+<div class="wrap" id="v-login" hidden>
+  <form class="card login" id="loginForm">
+    <h1>Dziennik Tradera</h1>
+    <p class="hint">Zaloguj się, żeby zobaczyć swoje transakcje na każdym urządzeniu.</p>
+    <label>E-mail<input id="l-email" type="email" required autocomplete="email"></label>
+    <label>Hasło<input id="l-pass" type="password" required minlength="6" autocomplete="current-password"></label>
+    <div class="row">
+      <button class="primary" type="submit" id="l-in">Zaloguj</button>
+      <button type="button" id="l-up">Załóż konto</button>
+    </div>
+    <p class="status" id="l-status"></p>
+  </form>
+</div>
+
+<!-- Ekran: dziennik -->
+<div class="wrap" id="v-app" hidden>
+  <header>
+    <div>
+      <h1>Dziennik Tradera</h1>
+      <p class="status" id="status">Ładowanie…</p>
+    </div>
+    <div class="row">
+      <button type="button" id="refresh">Odśwież</button>
+      <button type="button" class="link" id="logout">Wyloguj</button>
+    </div>
+  </header>
+
+  <section><div class="kpis" id="kpis"></div></section>
+
+  <div class="cols">
+    <section>
+      <h2>Moje zasady</h2>
+      <ol class="rules">
+        <li>Każda pozycja ma Stop Loss, zanim kliknę Kup/Sprzedaj.</li>
+        <li>Stop stoi tam, gdzie pomysł okazuje się błędny, a nie tam, gdzie „mało boli”. Na złocie min. ~$6–8.</li>
+        <li>Wielkość pozycji liczę od stopa: ryzyko max 1% konta.</li>
+        <li>Nie zamykam zysku ręcznie przed TP, chyba że cena łamie mój plan.</li>
+        <li>Po stracie 15 minut przerwy. Bez odwracania pozycji „na złość”.</li>
+        <li>Max 2 straty dziennie, potem koniec handlu.</li>
+      </ol>
+      <h2 style="margin-top:22px">Wyniki wg instrumentu</h2>
+      <div class="scroll"><table><thead><tr><th>Instrument</th><th class="n">Transakcje</th><th class="n">Wygrane</th><th class="n">Wynik PLN</th></tr></thead><tbody id="byInst"></tbody></table></div>
+    </section>
+
+    <section>
+      <h2 id="formTitle">Dodaj transakcję</h2>
+      <form class="card" id="f" autocomplete="off">
+        <div class="grid">
+          <label>Instrument<input id="f-instrument" list="insts" required placeholder="GOLD"></label>
+          <label>Kierunek<select id="f-side"><option>BUY</option><option>SELL</option></select></label>
+          <label>Wolumen (loty)<input id="f-volume" type="number" step="any" placeholder="0.005"></label>
+          <label>Otwarcie<input id="f-open_time" type="datetime-local"></label>
+          <label>Cena wejścia<input id="f-entry_price" type="number" step="any" required></label>
+          <label>Stop Loss<input id="f-sl" type="number" step="any"></label>
+          <label>Take Profit<input id="f-tp" type="number" step="any"></label>
+          <label>Cena wyjścia<input id="f-exit_price" type="number" step="any"></label>
+          <label>Wynik PLN<input id="f-pnl" type="number" step="any" required></label>
+          <label>Zamknięcie<select id="f-closed_by"><option value="SL">Stop Loss</option><option value="TP">Take Profit</option><option value="MAN">Ręcznie</option></select></label>
+          <label>Setup<input id="f-setup" placeholder="np. wybicie, odbicie od poziomu"></label>
+          <label>Emocje<select id="f-emotion"><option value="">–</option><option>Spokój</option><option>Pewność</option><option>Niecierpliwość</option><option>Strach</option><option>Złość / odegranie się</option><option>FOMO</option></select></label>
+        </div>
+        <label>Dlaczego wszedłem? Co poszło dobrze lub źle?<textarea id="f-notes"></textarea></label>
+        <label class="row" style="color:var(--fg);font-size:14px"><input id="f-rule_broken" type="checkbox" style="width:auto"> Złamałem którąś z moich zasad</label>
+        <div class="row">
+          <button class="primary" type="submit" id="save">Zapisz</button>
+          <button type="button" id="cancel" hidden>Anuluj edycję</button>
+          <button type="button" class="danger" id="del" hidden>Usuń</button>
+        </div>
+        <datalist id="insts"><option>GOLD</option><option>US500</option><option>US100</option><option>DE40</option><option>EURUSD</option></datalist>
+      </form>
+
+      <div class="card" style="margin-top:14px">
+        <strong style="font-size:14px">Import z XTB</strong>
+        <span class="hint">Wgraj eksport historii z xStation (.xlsx). Dodadzą się tylko nowe zamknięte pozycje. Twoje notatki zostają.</span>
+        <input type="file" id="file" accept=".xlsx,.xls">
+        <strong style="font-size:14px;margin-top:6px">Kopia zapasowa</strong>
+        <div class="row">
+          <button type="button" id="exportJson">Pobierz kopię (.json)</button>
+          <label class="btn" style="display:inline-block;color:var(--fg)">Wczytaj kopię<input type="file" id="importJson" accept=".json" hidden></label>
+        </div>
+        <span class="hint" id="impStatus"></span>
+      </div>
+    </section>
+  </div>
+
+  <section>
+    <h2>Transakcje</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Data</th><th>Instrument</th><th>Kierunek</th><th class="n">Wejście</th><th class="n">Stop</th><th class="n">Wyjście</th><th class="n">Plan R:R</th><th class="n">Wynik R</th><th class="n">PLN</th><th>Zamknięcie</th><th>Setup</th><th>Emocje</th></tr></thead>
+      <tbody id="list"></tbody>
+    </table></div>
+    <p class="hint">Kliknij wiersz, żeby dopisać notatki albo poprawić dane.</p>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="config.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const F=["instrument","side","volume","open_time","entry_price","sl","tp","exit_price","pnl","closed_by","setup","emotion","notes"];
+const NUM=new Set(["volume","entry_price","sl","tp","exit_price","pnl"]);
+const COLS=[...F,"rule_broken","source","id"];
+const cfg=window.DZIENNIK_CONFIG||{};
+let sb=null, trades=[], editing=null;
+
+const show=v=>["v-config","v-login","v-app"].forEach(id=>$(id).hidden=id!==v);
+const fmt=(v,d=2)=>v==null||isNaN(v)?"–":Number(v).toLocaleString("pl-PL",{minimumFractionDigits:d,maximumFractionDigits:d});
+const num=v=>v===""||v==null?null:Number(v);
+const dir=t=>t.side==="SELL"?-1:1;
+const riskDist=t=>t.sl!=null&&t.entry_price!=null?Math.abs(t.entry_price-t.sl):null;
+const planRR=t=>{const r=riskDist(t);return r&&t.tp!=null?Math.abs(t.tp-t.entry_price)/r:null};
+const realR=t=>{const r=riskDist(t);return r&&t.exit_price!=null?(t.exit_price-t.entry_price)*dir(t)/r:null};
+const newId=()=>"m-"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+function el(tag,props,...kids){const e=document.createElement(tag);Object.assign(e,props||{});kids.forEach(k=>e.append(k));return e}
+function setStatus(m,err){$("status").textContent=m;$("status").className="status"+(err?" err":"")}
+// Supabase zwraca liczby z kolumn numeric jako liczby albo tekst; ujednolicamy.
+function clean(r){const t={...r};NUM.forEach(k=>t[k]=t[k]==null?null:Number(t[k]));if(t.open_time)t.open_time=String(t.open_time).slice(0,16);return t}
+
+async function load(){
+  setStatus("Ładowanie…");
+  const {data,error}=await sb.from("trades").select("*").order("open_time",{ascending:false});
+  if(error){setStatus("Nie udało się pobrać danych: "+error.message,true);return}
+  trades=data.map(clean);setStatus("Zsynchronizowano · "+trades.length+" transakcji");render();
+}
+
+function render(){
+  const n=trades.length, wins=trades.filter(t=>t.pnl>0), losses=trades.filter(t=>t.pnl<0);
+  const net=trades.reduce((s,t)=>s+(t.pnl||0),0);
+  const gw=wins.reduce((s,t)=>s+t.pnl,0), gl=-losses.reduce((s,t)=>s+t.pnl,0);
+  const aw=wins.length?gw/wins.length:null, al=losses.length?gl/losses.length:null;
+  const be=aw&&al?al/(aw+al)*100:null, wr=n?wins.length/n*100:null;
+  const noSl=trades.filter(t=>t.sl==null).length, broke=trades.filter(t=>t.rule_broken).length;
+  const k=[
+    ["Wynik netto",fmt(net)+" PLN",net>=0?"pos":"neg",n+" transakcji"],
+    ["Skuteczność",wr==null?"–":fmt(wr,0)+"%",wr!=null&&be!=null?(wr>=be?"pos":"neg"):"",be==null?"":"próg rentowności "+fmt(be,0)+"%"],
+    ["Średni zysk",aw==null?"–":"+"+fmt(aw),"pos",wins.length+" wygranych"],
+    ["Średnia strata",al==null?"–":"−"+fmt(al),"neg",losses.length+" przegranych"],
+    ["Profit factor",gl?fmt(gw/gl):"–",gl&&gw/gl>=1?"pos":"neg","powyżej 1 = zarabiasz"],
+    ["Bez Stop Lossa",String(noSl),noSl?"wrn":"pos",broke?"złamane zasady: "+broke:"cel: 0"],
+  ];
+  $("kpis").replaceChildren(...k.map(([l,v,c,h])=>el("div",{className:"kpi"},el("div",{className:"l",textContent:l}),el("div",{className:"v "+c,textContent:v}),el("div",{className:"h",textContent:h}))));
+
+  const by={};trades.forEach(t=>{const b=by[t.instrument]||(by[t.instrument]={n:0,w:0,p:0});b.n++;if(t.pnl>0)b.w++;b.p+=t.pnl||0});
+  const rows=Object.entries(by).sort((a,b)=>a[1].p-b[1].p);
+  $("byInst").replaceChildren(...(rows.length?rows.map(([i,b])=>el("tr",{},el("td",{textContent:i}),el("td",{className:"n",textContent:b.n}),el("td",{className:"n",textContent:b.w}),el("td",{className:"n "+(b.p>=0?"pos":"neg"),textContent:fmt(b.p)}))):[el("tr",{},el("td",{colSpan:4,className:"empty",textContent:"Brak danych"}))]));
+
+  if(!trades.length){$("list").replaceChildren(el("tr",{},el("td",{colSpan:12,className:"empty",textContent:"Brak transakcji. Dodaj pierwszą formularzem, zaimportuj plik z XTB albo wczytaj kopię."})));return}
+  $("list").replaceChildren(...trades.map(t=>{
+    const pr=planRR(t), rr=realR(t);
+    const cb=t.sl==null?el("span",{className:"pill nosl",textContent:"brak SL"}):el("span",{className:"pill "+(t.closed_by==="SL"?"sl":t.closed_by==="TP"?"tp":""),textContent:{SL:"Stop Loss",TP:"Take Profit",MAN:"Ręcznie"}[t.closed_by]||"–"});
+    const tr=el("tr",{tabIndex:0},
+      el("td",{textContent:t.open_time?t.open_time.replace("T"," "):"–"}),
+      el("td",{textContent:t.instrument}),el("td",{textContent:t.side}),
+      el("td",{className:"n",textContent:fmt(t.entry_price)}),el("td",{className:"n",textContent:fmt(t.sl)}),el("td",{className:"n",textContent:fmt(t.exit_price)}),
+      el("td",{className:"n",textContent:pr==null?"–":"1:"+fmt(pr,1)}),
+      el("td",{className:"n "+(rr==null?"":rr>=0?"pos":"neg"),textContent:rr==null?"–":fmt(rr,1)+"R"}),
+      el("td",{className:"n "+(t.pnl>=0?"pos":"neg"),textContent:fmt(t.pnl)}),
+      el("td",{},cb),el("td",{textContent:t.setup||""}),el("td",{textContent:(t.emotion||"")+(t.rule_broken?" ⚠":"")}));
+    tr.onclick=()=>startEdit(t);tr.onkeydown=e=>{if(e.key==="Enter")startEdit(t)};
+    return tr}));
+}
+
+function startEdit(t){
+  editing=t;F.forEach(f=>$("f-"+f).value=t[f]??"");$("f-rule_broken").checked=!!t.rule_broken;
+  if(!t.closed_by)$("f-closed_by").value="MAN";
+  $("formTitle").textContent="Edytuj transakcję";$("cancel").hidden=false;$("del").hidden=false;$("del").textContent="Usuń";
+  $("f").scrollIntoView({behavior:"smooth",block:"start"});
+}
+function resetForm(){editing=null;$("f").reset();$("formTitle").textContent="Dodaj transakcję";$("cancel").hidden=true;$("del").hidden=true}
+$("cancel").onclick=resetForm;
+$("del").onclick=async()=>{
+  if($("del").textContent==="Usuń"){$("del").textContent="Na pewno usunąć?";return}
+  const {error}=await sb.from("trades").delete().eq("id",editing.id);
+  if(error){setStatus("Nie udało się usunąć: "+error.message,true);return}
+  resetForm();load();
+};
+$("f").onsubmit=async e=>{
+  e.preventDefault();
+  const d={};F.forEach(f=>{const v=$("f-"+f).value;d[f]=NUM.has(f)?num(v):v});
+  d.rule_broken=$("f-rule_broken").checked;d.instrument=(d.instrument||"").toUpperCase().trim();d.open_time=d.open_time||null;
+  $("save").disabled=true;
+  const q=editing?sb.from("trades").update(d).eq("id",editing.id):sb.from("trades").insert({...d,id:newId(),source:"manual"});
+  const {error}=await q;$("save").disabled=false;
+  if(error){setStatus("Nie udało się zapisać: "+error.message,true);return}
+  resetForm();load();
+};
+
+// Import z XTB: wiersze arkusza "Closed Positions" stają się transakcjami o id = numer pozycji.
+$("file").onchange=async e=>{
+  const file=e.target.files[0]; if(!file)return;
+  const st=$("impStatus"); st.textContent="Czytam plik…";
+  try{
+    const wb=XLSX.read(await file.arrayBuffer());
+    const ws=wb.Sheets["Closed Positions"]||wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,dateNF:"yyyy-mm-dd hh:mm",defval:""});
+    const rawRows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:""});
+    const h=rows.findIndex(r=>r[0]==="Instrument"); if(h<0)throw new Error("nie znalazłem tabeli Closed Positions");
+    const H=rows[h], c=name=>H.indexOf(name);
+    const have=new Set(trades.map(t=>t.id)), add=[];
+    rawRows.slice(h+1).forEach((r,i)=>{
+      const pid=r[c("Position ID")]; if(!pid||!r[c("Instrument")])return;
+      const id="xtb-"+String(Math.round(Number(pid)));
+      if(have.has(id))return;
+      const cm=String(r[c("Comment")]||""), txt=rows[h+1+i];
+      add.push({id,instrument:String(r[c("Instrument")]),side:String(r[c("Type")]),volume:num(r[c("Volume")]),
+        open_time:String(txt[c("Open Time (UTC)")]).slice(0,16).replace(" ","T")||null,
+        entry_price:num(r[c("Open Price")]),exit_price:num(r[c("Close Price")]),sl:num(r[c("Stop Loss")]),tp:num(r[c("Take Profit")]),
+        pnl:num(r[c("Profit/Loss")]),closed_by:cm.includes("S/L")?"SL":cm.includes("T/P")?"TP":"MAN",source:"xtb"});
+    });
+    if(add.length){const {error}=await sb.from("trades").insert(add);if(error)throw error}
+    st.textContent=`Dodano ${add.length} nowych transakcji.`;load();
+  }catch(err){st.textContent="Import nieudany: "+err.message}
+  e.target.value="";
+};
+
+$("exportJson").onclick=()=>{
+  const blob=new Blob([JSON.stringify(trades.map(t=>Object.fromEntries(COLS.map(k=>[k,t[k]??null]))),null,1)],{type:"application/json"});
+  const a=el("a",{href:URL.createObjectURL(blob),download:"dziennik-kopia-"+new Date().toISOString().slice(0,10)+".json"});a.click();
+};
+$("importJson").onchange=async e=>{
+  const file=e.target.files[0]; if(!file)return; const st=$("impStatus");
+  try{
+    const list=JSON.parse(await file.text()); if(!Array.isArray(list))throw new Error("to nie jest kopia dziennika");
+    const rows=list.map(t=>Object.fromEntries(COLS.map(k=>[k,t[k]??(k==="rule_broken"?false:null)]))).map(t=>({...t,id:t.id||newId()}));
+    const {error}=await sb.from("trades").upsert(rows,{onConflict:"user_id,id"}); if(error)throw error;
+    st.textContent=`Wczytano ${rows.length} transakcji.`;load();
+  }catch(err){st.textContent="Wczytanie nieudane: "+err.message}
+  e.target.value="";
+};
+
+// Logowanie
+async function auth(kind){
+  const email=$("l-email").value.trim(), password=$("l-pass").value, st=$("l-status");
+  if(!email||password.length<6){st.textContent="Podaj e-mail i hasło (min. 6 znaków).";return}
+  st.textContent="Chwileczkę…";
+  const {data,error}=kind==="up"?await sb.auth.signUp({email,password}):await sb.auth.signInWithPassword({email,password});
+  if(error){st.textContent=error.message==="Invalid login credentials"?"Zły e-mail lub hasło.":error.message;return}
+  if(kind==="up"&&!data.session)st.textContent="Konto założone. Kliknij link w mailu od Supabase, potem zaloguj się tutaj.";
+}
+$("loginForm").onsubmit=e=>{e.preventDefault();auth("in")};
+$("l-up").onclick=()=>auth("up");
+$("logout").onclick=()=>sb.auth.signOut();
+$("refresh").onclick=load;
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!$("v-app").hidden)load()});
+
+if(!cfg.supabaseUrl||!cfg.supabaseAnonKey||!window.supabase){show("v-config")}
+else{
+  sb=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey);
+  sb.auth.onAuthStateChange((_ev,session)=>{if(session){show("v-app");load()}else{trades=[];show("v-login")}});
+}
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
