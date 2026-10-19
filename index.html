@@ -246,7 +246,7 @@ body.dragging::after{content:"Upuść screena albo plik z XTB";position:fixed;in
         <button type="button" class="ghost" id="pickXtb">Screen z XTB</button>
         <button type="button" class="ghost" id="pickChart">Dodaj wykres</button>
       </div>
-      <span class="hint" id="ocrStatus">Albo wklej screena tutaj (Ctrl+V). Wąski pasek z historii XTB wypełni pola, a wykres doczepi się do transakcji.</span>
+      <span class="hint" id="ocrStatus">Albo wklej screena tutaj (Ctrl+V). Okno „Szczegóły pozycji” albo wiersz z historii XTB wypełni pola, a wykres doczepi się do transakcji.</span>
       <img id="chartPrev" hidden alt="Wykres transakcji">
       <input type="file" id="xtbFile" accept="image/*" hidden><input type="file" id="chartFile" accept="image/*" hidden>
     </div>
@@ -527,6 +527,40 @@ async function readXtbScreenshot(blob,opts){
   for(const k in b)if(a[k]==null)a[k]=b[k];
   return a;
 }
+// Okno „Szczegóły pozycji” z xStation: etykiety w wierszu, wartości w linii pod nimi.
+const isDetails=t=>/Stop\s*Loss/i.test(t)&&/Cena\s*otwarcia|Zysk\s*\/?\s*strata/i.test(t);
+function parseDetails(text){
+  const L=text.split("\n").map(l=>l.trim()).filter(Boolean), r={};
+  const below=re=>{const i=L.findIndex(l=>re.test(l));return i<0?null:{v:L[i+1]||"",v2:L[i+2]||""}};
+  const dec=s=>[...s.replace(/(\d),(\d)/g,"$1.$2").replace(/[−–—~]\s*(?=\d)/g,"-").matchAll(/-?(?<![\d.])\d+\.\d+(?![\d.])/g)].map(m=>Number(m[0]));
+  const toks=s=>s.split(/\s{2,}|\s*~+\s*/).map(x=>x.trim()).filter(Boolean);
+  const up=L.slice(0,4).join(" ").toUpperCase(), words=up.match(/\b[A-Z][A-Z0-9.]{1,9}\b/g)||[];
+  r.instrument=words.find(w=>KNOWN.includes(w))||words.find(w=>/^[A-Z]{6}$/.test(w))||null;
+  const a=below(/Wolumen/i);
+  if(a){r.side=/SELL|SPRZED/i.test(a.v)?"SELL":/BUY|KUP/i.test(a.v)?"BUY":null;const n=dec(a.v);r.volume=n[0]??null;r.pnl=n[1]??null}
+  const b=below(/Cena\s*otwarcia/i);
+  if(b){const n=dec(b.v);r.entry_price=n[0]??null;r.exit_price=n[1]??null;
+    const d=[...(b.v+" "+b.v2).matchAll(/\b(\d{2})[.,](\d{2})[.,](\d{4})\b/g)].map(m=>m.slice(1));
+    const tm=[...(b.v+" "+b.v2).matchAll(/\b(\d{1,2}):(\d{2})\b/g)].map(m=>m.slice(1));
+    const dt=(d,t)=>d&&t?new Date(+d[2],+d[1]-1,+d[0],+t[0],+t[1]).toISOString().slice(0,16):null;
+    r.open_time=dt(d[0],tm[0]);r.close_time=dt(d[1]||d[0],tm[1])}
+  const c=below(/Stop\s*Loss/i);
+  if(c){const tk=toks(c.v);
+    const num=x=>{const n=dec(x||"");return n.length?n[0]:null};
+    if(tk.length>=3){r.sl=num(tk[0]);r.tp=num(tk[1])}else{const n=dec(c.v);r.sl=n[0]??null;r.tp=n[1]??null}
+    r.pid=(c.v.match(/\b\d{9,12}\b/)||[])[0]||null}
+  if(r.sl===0)r.sl=null;if(r.tp===0)r.tp=null;
+  const k=L.findIndex(l=>/Komentarz/i.test(l)), cm=k<0?"":(L[k+1]||"");
+  r.closed_by=/\[\s*s/i.test(cm)?"SL":/\[\s*t/i.test(cm)?"TP":"MAN";
+  return r;
+}
+async function readDetails(blob,opts){
+  const a=parseDetails(await ocrPass(blob,"gray",2,"4",opts));
+  if(a.pid&&a.volume&&a.entry_price&&a.exit_price&&a.open_time&&a.pnl!=null)return a;
+  const b=parseDetails(await ocrPass(blob,"bin",2,"4",opts));
+  for(const k in b)if(a[k]==null)a[k]=b[k];
+  return a;
+}
 
 // Wartość 1 punktu na 1 lot w USD (z Twoich transakcji w XTB); reszta instrumentów: wynik wpisujesz sam.
 const POINT_USD={GOLD:100,US500:50,US100:20};
@@ -536,35 +570,59 @@ async function getUsdPln(){
   try{const r=await fetch("https://api.nbp.pl/api/exchangerates/rates/a/usd/?format=json");usdpln=(await r.json()).rates[0].mid}catch{usdpln=3.7}
   return usdpln;
 }
+// Wypełnia formularz odczytanymi polami; ze „Szczegółów pozycji” wynik PLN, SL i TP są dokładne.
+async function fillFromShot(r,full){
+  if(!r.pid&&!r.entry_price)throw new Error("nie widzę tu pozycji z XTB");
+  const ex=r.pid&&trades.find(t=>t.id==="xtb-"+r.pid);
+  if(ex&&!editing){
+    startEdit(ex);
+    if(!full){ocrMsg("Ta pozycja już jest w dzienniku, otworzyłem ją.");return}
+  }
+  const set=(k,v)=>{if(v!=null&&v!==""&&!$("f-"+k).disabled)$("f-"+k).value=v};
+  const keys=["pid","instrument","side","volume","open_time","entry_price","exit_price"];
+  if(full)keys.push("pnl","sl","tp","closed_by");
+  keys.forEach(k=>set(k,r[k]));
+  let est=false;
+  if(!$("f-pnl").value&&r.entry_price&&r.exit_price&&r.volume&&POINT_USD[r.instrument]){
+    const rate=await getUsdPln();
+    $("f-pnl").value=((r.exit_price-r.entry_price)*(r.side==="SELL"?-1:1)*r.volume*POINT_USD[r.instrument]*rate).toFixed(2);est=true;
+  }
+  const names={instrument:"symbol",volume:"wolumen",open_time:"otwarcie",entry_price:"wejście",exit_price:"wyjście",pnl:"wynik PLN"};
+  const miss=Object.keys(names).filter(k=>!$("f-"+k).value).map(k=>names[k]);
+  ocrMsg((ex?"Uzupełniłem tę pozycję ze screena. ":"Odczytane. ")+"Sprawdź pola"+(full?" i kliknij Zapisz.":" i dopisz SL/TP.")
+    +(est?" Wynik PLN to szacunek po kursie NBP, dokładny wejdzie przy imporcie pliku z XTB.":"")+(r.many?" Na screenie było kilka pozycji, wziąłem pierwszą.":"")+(miss.length?" Brakuje: "+miss.join(", ")+".":""));
+}
+// Screen z przycisku: wąski pasek to wiersz historii, reszta to okno szczegółów pozycji.
 async function handleXtbShot(blob){
   ocrMsg("Czytam screena… (pierwszy raz trwa kilka sekund)");
   try{
     await loadTesseract();
-    const r=await readXtbScreenshot(blob);
-    if(!r.pid&&!r.entry_price)throw new Error("nie widzę tu pozycji z XTB");
-    const ex=r.pid&&trades.find(t=>t.id==="xtb-"+r.pid);
-    if(ex&&!editing){startEdit(ex);ocrMsg("Ta pozycja już jest w dzienniku, otworzyłem ją.");return}
-    const set=(k,v)=>{if(v!=null&&v!==""&&!$("f-"+k).disabled)$("f-"+k).value=v};
-    ["pid","instrument","side","volume","open_time","entry_price","exit_price"].forEach(k=>set(k,r[k]));
-    let est=false;
-    if(!$("f-pnl").value&&r.entry_price&&r.exit_price&&r.volume&&POINT_USD[r.instrument]){
-      const rate=await getUsdPln();
-      $("f-pnl").value=((r.exit_price-r.entry_price)*(r.side==="SELL"?-1:1)*r.volume*POINT_USD[r.instrument]*rate).toFixed(2);est=true;
-    }
-    const names={instrument:"symbol",volume:"wolumen",open_time:"otwarcie",entry_price:"wejście",exit_price:"wyjście",pnl:"wynik PLN"};
-    const miss=Object.keys(names).filter(k=>!$("f-"+k).value).map(k=>names[k]);
-    ocrMsg("Odczytane. Sprawdź pola i dopisz SL/TP."+(est?" Wynik PLN to szacunek po kursie NBP, dokładny wejdzie przy imporcie pliku z XTB.":"")+(r.many?" Na screenie było kilka pozycji, wziąłem pierwszą.":"")+(miss.length?" Brakuje: "+miss.join(", ")+".":""));
+    const bm=await createImageBitmap(blob);
+    if(bm.width/bm.height>5)await fillFromShot(await readXtbScreenshot(blob),false);
+    else await fillFromShot(await readDetails(blob),true);
   }catch(err){ocrMsg("Nie udało się odczytać: "+err.message,true)}
 }
 function setChart(blob){
   pendingChart=blob;$("chartPrev").src=URL.createObjectURL(blob);$("chartPrev").hidden=false;
   ocrMsg("Wykres doczepiony. Zapisze się razem z transakcją.");
 }
-// Wąski, szeroki pasek to wiersz z historii XTB; wszystko inne traktuję jak wykres.
+// Wklejony obraz: wiersz historii XTB, okno szczegółów pozycji albo wykres.
+// Wykres doczepia się od razu; jeśli w tle okaże się szczegółami pozycji, odczepiam go i wypełniam pola.
 async function routeImage(blob){
   if($("sheet").hidden){resetForm();openSheet()}
   const b=await createImageBitmap(blob);
-  if(b.width/b.height>5)handleXtbShot(blob);else setChart(blob);
+  if(b.width/b.height>5)return handleXtbShot(blob);
+  const prev=pendingChart;setChart(blob);
+  try{
+    await loadTesseract();
+    const text=await ocrPass(blob,"gray",Math.min(2,1600/b.width),"4");
+    if(!isDetails(text)||pendingChart!==blob)return;
+    pendingChart=prev;if(!prev)$("chartPrev").hidden=true;else $("chartPrev").src=URL.createObjectURL(prev);
+    ocrMsg("Czytam szczegóły pozycji…");
+    const r=parseDetails(text);
+    if(!(r.pid&&r.volume&&r.entry_price&&r.exit_price&&r.open_time&&r.pnl!=null)){const r2=await readDetails(blob);for(const k in r2)if(r[k]==null)r[k]=r2[k]}
+    await fillFromShot(r,true);
+  }catch(err){}
 }
 $("pickXtb").onclick=()=>$("xtbFile").click();
 $("pickChart").onclick=()=>$("chartFile").click();

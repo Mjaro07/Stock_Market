@@ -1,5 +1,5 @@
 // Zapamiętuje pliki aplikacji, żeby otwierała się szybko. Dane zawsze idą z Supabase.
-const CACHE = "dziennik-v6";
+const CACHE = "dziennik-v7";
 const SHELL = ["./", "index.html", "config.js", "manifest.json", "icon-192.png", "icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener("activate", e => {
