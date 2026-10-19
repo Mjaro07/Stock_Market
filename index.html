@@ -528,7 +528,7 @@ async function readXtbScreenshot(blob,opts){
   return a;
 }
 // Okno „Szczegóły pozycji” z xStation: etykiety w wierszu, wartości w linii pod nimi.
-const isDetails=t=>/Stop\s*Loss/i.test(t)&&/Cena\s*otwarcia|Zysk\s*\/?\s*strata/i.test(t);
+const isDetails=t=>[/Stop\s*Loss/i,/Take\s*Profit/i,/Cena\s*otwarcia/i,/Cena\s*zamkn/i,/Zysk/i,/Wolumen/i,/Pozycji/i,/Szczeg/i,/Komentarz/i].filter(re=>re.test(t)).length>=3;
 function parseDetails(text){
   const L=text.split("\n").map(l=>l.trim()).filter(Boolean), r={};
   const below=re=>{const i=L.findIndex(l=>re.test(l));return i<0?null:{v:L[i+1]||"",v2:L[i+2]||""}};
@@ -538,26 +538,32 @@ function parseDetails(text){
   r.instrument=words.find(w=>KNOWN.includes(w))||words.find(w=>/^[A-Z]{6}$/.test(w))||null;
   const a=below(/Wolumen/i);
   if(a){r.side=/SELL|SPRZED/i.test(a.v)?"SELL":/BUY|KUP/i.test(a.v)?"BUY":null;const n=dec(a.v);r.volume=n[0]??null;r.pnl=n[1]??null}
-  const b=below(/Cena\s*otwarcia/i);
+  const b=below(/otwarcia.*zamkn/i);
   if(b){const n=dec(b.v);r.entry_price=n[0]??null;r.exit_price=n[1]??null;
     const d=[...(b.v+" "+b.v2).matchAll(/\b(\d{2})[.,](\d{2})[.,](\d{4})\b/g)].map(m=>m.slice(1));
     const tm=[...(b.v+" "+b.v2).matchAll(/\b(\d{1,2}):(\d{2})\b/g)].map(m=>m.slice(1));
     const dt=(d,t)=>d&&t?new Date(+d[2],+d[1]-1,+d[0],+t[0],+t[1]).toISOString().slice(0,16):null;
     r.open_time=dt(d[0],tm[0]);r.close_time=dt(d[1]||d[0],tm[1])}
-  const c=below(/Stop\s*Loss/i);
+  const c=below(/Loss.*Profit|Stop\s*Loss/i);
   if(c){const tk=toks(c.v);
     const num=x=>{const n=dec(x||"");return n.length?n[0]:null};
     if(tk.length>=3){r.sl=num(tk[0]);r.tp=num(tk[1])}else{const n=dec(c.v);r.sl=n[0]??null;r.tp=n[1]??null}
     r.pid=(c.v.match(/\b\d{9,12}\b/)||[])[0]||null}
   if(r.sl===0)r.sl=null;if(r.tp===0)r.tp=null;
+  // Cena z uciętą cyfrą odbiega od reszty; lepiej puste pole niż złe.
+  const ref=[r.entry_price,r.exit_price,r.sl,r.tp].filter(Boolean).sort((x,y)=>x-y);const med=ref[Math.floor(ref.length/2)];
+  ["entry_price","exit_price","sl","tp"].forEach(k=>{if(r[k]&&med&&Math.abs(r[k]/med-1)>.2)r[k]=null});
+  // Minus przy wyniku bywa gubiony przez OCR; znak wynika z ruchu ceny.
+  if(r.pnl&&r.entry_price&&r.exit_price&&r.side){const mv=(r.exit_price-r.entry_price)*(r.side==="SELL"?-1:1);if(Math.abs(mv)/r.entry_price>3e-4&&mv*r.pnl<0)r.pnl=-r.pnl}
   const k=L.findIndex(l=>/Komentarz/i.test(l)), cm=k<0?"":(L[k+1]||"");
   r.closed_by=/\[\s*s/i.test(cm)?"SL":/\[\s*t/i.test(cm)?"TP":"MAN";
   return r;
 }
 async function readDetails(blob,opts){
-  const a=parseDetails(await ocrPass(blob,"gray",2,"4",opts));
+  const sc=Math.min(3,Math.max(2,1600/(await createImageBitmap(blob)).width));
+  const a=parseDetails(await ocrPass(blob,"gray",sc,"4",opts));
   if(a.pid&&a.volume&&a.entry_price&&a.exit_price&&a.open_time&&a.pnl!=null)return a;
-  const b=parseDetails(await ocrPass(blob,"bin",2,"4",opts));
+  const b=parseDetails(await ocrPass(blob,"bin",sc,"4",opts));
   for(const k in b)if(a[k]==null)a[k]=b[k];
   return a;
 }
@@ -613,21 +619,23 @@ async function routeImage(blob){
   const b=await createImageBitmap(blob);
   if(b.width/b.height>5)return handleXtbShot(blob);
   const prev=pendingChart;setChart(blob);
+  ocrMsg("Wykres doczepiony. Sprawdzam jeszcze, czy to nie szczegóły pozycji z XTB…");
   try{
     await loadTesseract();
-    const text=await ocrPass(blob,"gray",Math.min(2,1600/b.width),"4");
-    if(!isDetails(text)||pendingChart!==blob)return;
+    const text=await ocrPass(blob,"gray",Math.min(3,2000/b.width),"4");
+    if(pendingChart!==blob)return;
+    if(!isDetails(text)){ocrMsg("Wykres doczepiony. Zapisze się razem z transakcją.");return}
     pendingChart=prev;if(!prev)$("chartPrev").hidden=true;else $("chartPrev").src=URL.createObjectURL(prev);
     ocrMsg("Czytam szczegóły pozycji…");
     const r=parseDetails(text);
     if(!(r.pid&&r.volume&&r.entry_price&&r.exit_price&&r.open_time&&r.pnl!=null)){const r2=await readDetails(blob);for(const k in r2)if(r[k]==null)r[k]=r2[k]}
     await fillFromShot(r,true);
-  }catch(err){}
+  }catch(err){ocrMsg("Wykres doczepiony. Odczyt tekstu nie zadziałał: "+err.message,true)}
 }
 $("pickXtb").onclick=()=>$("xtbFile").click();
 $("pickChart").onclick=()=>$("chartFile").click();
 $("xtbFile").onchange=e=>{const f=e.target.files[0];if(f)handleXtbShot(f);e.target.value=""};
-$("chartFile").onchange=e=>{const f=e.target.files[0];if(f)setChart(f);e.target.value=""};
+$("chartFile").onchange=e=>{const f=e.target.files[0];if(f)routeImage(f);e.target.value=""};
 $("shotBtn").onclick=()=>{resetForm();openSheet();$("xtbFile").click()};
 $("chartPrev").onclick=()=>{if($("chartPrev").src)window.open($("chartPrev").src,"_blank")};
 document.addEventListener("paste",e=>{
