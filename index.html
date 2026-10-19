@@ -145,6 +145,15 @@ textarea{min-height:80px;resize:vertical}
 .check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--fg)}
 .check input{width:auto;accent-color:var(--accent)}
 
+/* screeny */
+.drop{border:1px dashed var(--line-2);border-radius:6px;padding:10px;display:grid;gap:8px;transition:border-color .15s,background .15s}
+.drop.over,body.dragging .drop{border-color:var(--accent);background:rgba(41,98,255,.08)}
+.drop .row{gap:6px}
+#chartPrev{max-width:100%;max-height:220px;object-fit:contain;border-radius:4px;cursor:zoom-in;justify-self:start}
+.hint.neg{color:var(--loss)} .hint.ok{color:var(--win)}
+.cam{font-size:10px;color:var(--accent);margin-left:6px;vertical-align:1px}
+body.dragging::after{content:"Upuść screena albo plik z XTB";position:fixed;inset:12px;border:2px dashed var(--accent);border-radius:12px;background:rgba(19,23,34,.85);display:grid;place-items:center;font-size:18px;color:var(--strong);z-index:30;pointer-events:none}
+
 /* logowanie */
 .login-wrap{min-height:100vh;display:grid;place-items:center;padding:20px}
 .login{width:min(360px,100%);background:var(--pane);border:1px solid var(--line);border-radius:8px;padding:28px;display:grid;gap:14px}
@@ -184,6 +193,7 @@ textarea{min-height:80px;resize:vertical}
     <span class="hide-s"><span class="status" id="status">łączę…</span></span>
     <button type="button" id="refresh" title="Odśwież">⟳</button>
     <button type="button" id="logout">Wyloguj</button>
+    <button type="button" id="shotBtn" title="Dodaj transakcję ze screena">Screen</button>
     <button type="button" class="solid" id="newTrade">+ Transakcja<span class="hide-s"> <kbd>N</kbd></span></button>
   </header>
 
@@ -231,11 +241,21 @@ textarea{min-height:80px;resize:vertical}
 <div class="sheet" id="sheet" hidden>
   <form class="sheet-body" id="f" autocomplete="off">
     <div class="sheet-head"><h2 id="formTitle">Nowa transakcja</h2><button type="button" id="close" aria-label="Zamknij">✕</button></div>
+    <div class="drop" id="drop">
+      <div class="row">
+        <button type="button" class="ghost" id="pickXtb">Screen z XTB</button>
+        <button type="button" class="ghost" id="pickChart">Dodaj wykres</button>
+      </div>
+      <span class="hint" id="ocrStatus">Albo wklej screena tutaj (Ctrl+V). Wąski pasek z historii XTB wypełni pola, a wykres doczepi się do transakcji.</span>
+      <img id="chartPrev" hidden alt="Wykres transakcji">
+      <input type="file" id="xtbFile" accept="image/*" hidden><input type="file" id="chartFile" accept="image/*" hidden>
+    </div>
     <div class="grid">
       <label>Symbol<input id="f-instrument" list="insts" required placeholder="GOLD"></label>
       <label>Strona<select id="f-side"><option>BUY</option><option>SELL</option></select></label>
       <label>Wolumen<input id="f-volume" type="number" step="any" placeholder="0.005"></label>
-      <label style="grid-column:span 2">Otwarcie<input id="f-open_time" type="datetime-local"></label>
+      <label>Nr pozycji XTB<input id="f-pid" inputmode="numeric" placeholder="opcjonalnie"></label>
+      <label>Otwarcie<input id="f-open_time" type="datetime-local"></label>
       <label>Zamknięcie<select id="f-closed_by"><option value="SL">Stop Loss</option><option value="TP">Take Profit</option><option value="MAN">Ręcznie</option></select></label>
       <label>Wejście<input id="f-entry_price" type="number" step="any" required></label>
       <label>Stop Loss<input id="f-sl" type="number" step="any"></label>
@@ -263,7 +283,7 @@ textarea{min-height:80px;resize:vertical}
 const $=id=>document.getElementById(id);
 const F=["instrument","side","volume","open_time","entry_price","sl","tp","exit_price","pnl","closed_by","setup","emotion","notes"];
 const NUM=new Set(["volume","entry_price","sl","tp","exit_price","pnl"]);
-const COLS=[...F,"rule_broken","source","id"];
+const COLS=[...F,"rule_broken","source","id","chart_path"];
 const cfg=window.DZIENNIK_CONFIG||{};
 let sb=null, trades=[], editing=null;
 
@@ -329,7 +349,7 @@ function render(){
     const cb=t.sl==null?el("span",{className:"tag nosl",textContent:"brak SL"}):el("span",{className:"tag "+(t.closed_by==="SL"?"sl":t.closed_by==="TP"?"tp":""),textContent:{SL:"Stop Loss",TP:"Take Profit",MAN:"Ręcznie"}[t.closed_by]||"–"});
     const tr=el("tr",{tabIndex:0},
       el("td",{className:"d",textContent:t.open_time?t.open_time.replace("T"," "):"–"}),
-      el("td",{className:"sym",textContent:t.instrument}),el("td",{},el("span",{className:"side "+(t.side==="SELL"?"s":"l"),textContent:t.side==="SELL"?"Sell":"Buy"})),
+      el("td",{className:"sym"},t.instrument,t.chart_path?el("span",{className:"cam",title:"Ma zapisany wykres",textContent:"▣"}):""),el("td",{},el("span",{className:"side "+(t.side==="SELL"?"s":"l"),textContent:t.side==="SELL"?"Sell":"Buy"})),
       el("td",{className:"n",textContent:fmt(t.entry_price)}),el("td",{className:"n dim",textContent:fmt(t.sl)}),el("td",{className:"n",textContent:fmt(t.exit_price)}),
       el("td",{className:"n dim",textContent:pr==null?"–":"1:"+fmt(pr,1)}),
       el("td",{className:"n "+(rr==null?"":rr>=0?"pos":"neg"),textContent:rr==null?"–":(rr>0?"+":"")+fmt(rr,2)+"R"}),
@@ -372,9 +392,11 @@ function startEdit(t){
   editing=t;F.forEach(f=>$("f-"+f).value=t[f]??"");$("f-rule_broken").checked=!!t.rule_broken;
   if(!t.closed_by)$("f-closed_by").value="MAN";
   $("formTitle").textContent=t.instrument+" · "+(t.open_time||"").slice(0,10);$("del").hidden=false;$("del").textContent="Usuń";
+  $("f-pid").value=t.id.startsWith("xtb-")?t.id.slice(4):"";$("f-pid").disabled=true;
+  if(t.chart_path)sb.storage.from("charts").createSignedUrl(t.chart_path,3600).then(({data})=>{if(data&&editing===t){$("chartPrev").src=data.signedUrl;$("chartPrev").hidden=false}});
   openSheet();
 }
-function resetForm(){editing=null;$("f").reset();$("formTitle").textContent="Nowa transakcja";$("del").hidden=true;$("sheet").hidden=true;document.body.style.overflow=""}
+function resetForm(){editing=null;$("f").reset();pendingChart=null;$("chartPrev").hidden=true;$("chartPrev").removeAttribute("src");$("f-pid").disabled=false;$("ocrStatus").className="hint";$("ocrStatus").textContent=OCR_HINT;$("formTitle").textContent="Nowa transakcja";$("del").hidden=true;$("sheet").hidden=true;document.body.style.overflow=""}
 $("newTrade").onclick=()=>{resetForm();openSheet()};
 $("close").onclick=resetForm;
 document.addEventListener("keydown",e=>{if(e.key.toLowerCase()==="n"&&!e.metaKey&&!e.ctrlKey&&$("sheet").hidden&&!$("v-app").hidden&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)){e.preventDefault();resetForm();openSheet()}});
@@ -383,6 +405,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("sheet").hidden)
 $("cancel").onclick=resetForm;
 $("del").onclick=async()=>{
   if($("del").textContent==="Usuń"){$("del").textContent="Na pewno usunąć?";return}
+  if(editing.chart_path)await sb.storage.from("charts").remove([editing.chart_path]);
   const {error}=await sb.from("trades").delete().eq("id",editing.id);
   if(error){setStatus("Nie udało się usunąć: "+error.message,true);return}
   resetForm();load();
@@ -391,16 +414,23 @@ $("f").onsubmit=async e=>{
   e.preventDefault();
   const d={};F.forEach(f=>{const v=$("f-"+f).value;d[f]=NUM.has(f)?num(v):v});
   d.rule_broken=$("f-rule_broken").checked;d.instrument=(d.instrument||"").toUpperCase().trim();d.open_time=d.open_time||null;
+  const pid=$("f-pid").value.replace(/\D/g,""), id=editing?editing.id:(pid?"xtb-"+pid:newId());
+  if(!editing&&trades.some(t=>t.id===id)){ocrMsg("Pozycja nr "+pid+" już jest w dzienniku.",true);return}
   $("save").disabled=true;
-  const q=editing?sb.from("trades").update(d).eq("id",editing.id):sb.from("trades").insert({...d,id:newId(),source:"manual"});
+  if(pendingChart){
+    const path=uid+"/"+id+"."+((pendingChart.type.split("/")[1]||"png").replace("jpeg","jpg"));
+    const up=await sb.storage.from("charts").upload(path,pendingChart,{upsert:true,contentType:pendingChart.type||"image/png"});
+    if(up.error)setStatus("Wykres się nie zapisał: "+up.error.message,true);else d.chart_path=path;
+  }
+  const q=editing?sb.from("trades").update(d).eq("id",editing.id):sb.from("trades").insert({...d,id,source:pid?"screen":"manual"});
   const {error}=await q;$("save").disabled=false;
   if(error){setStatus("Nie udało się zapisać: "+error.message,true);return}
   resetForm();load();
 };
 
 // Import z XTB: wiersze arkusza "Closed Positions" stają się transakcjami o id = numer pozycji.
-$("file").onchange=async e=>{
-  const file=e.target.files[0]; if(!file)return;
+$("file").onchange=e=>{const f=e.target.files[0];if(f)importXlsx(f);e.target.value=""};
+async function importXlsx(file){
   const st=$("impStatus"); st.textContent="Czytam plik…";
   try{
     const wb=XLSX.read(await file.arrayBuffer());
@@ -409,22 +439,23 @@ $("file").onchange=async e=>{
     const rawRows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:""});
     const h=rows.findIndex(r=>r[0]==="Instrument"); if(h<0)throw new Error("nie znalazłem tabeli Closed Positions");
     const H=rows[h], c=name=>H.indexOf(name);
-    const have=new Set(trades.map(t=>t.id)), add=[];
+    const have=new Set(trades.map(t=>t.id)), add=[], fix=[];
     rawRows.slice(h+1).forEach((r,i)=>{
       const pid=r[c("Position ID")]; if(!pid||!r[c("Instrument")])return;
       const id="xtb-"+String(Math.round(Number(pid)));
-      if(have.has(id))return;
       const cm=String(r[c("Comment")]||""), txt=rows[h+1+i];
+      const old=trades.find(t=>t.id===id);
+      if(old){if(old.source==="screen")fix.push({id,pnl:num(r[c("Profit/Loss")]),sl:num(r[c("Stop Loss")]),tp:num(r[c("Take Profit")]),exit_price:num(r[c("Close Price")]),open_time:String(txt[c("Open Time (UTC)")]).slice(0,16).replace(" ","T")||null,closed_by:cm.includes("S/L")?"SL":cm.includes("T/P")?"TP":"MAN",source:"xtb"});return}
       add.push({id,instrument:String(r[c("Instrument")]),side:String(r[c("Type")]),volume:num(r[c("Volume")]),
         open_time:String(txt[c("Open Time (UTC)")]).slice(0,16).replace(" ","T")||null,
         entry_price:num(r[c("Open Price")]),exit_price:num(r[c("Close Price")]),sl:num(r[c("Stop Loss")]),tp:num(r[c("Take Profit")]),
         pnl:num(r[c("Profit/Loss")]),closed_by:cm.includes("S/L")?"SL":cm.includes("T/P")?"TP":"MAN",source:"xtb"});
     });
     if(add.length){const {error}=await sb.from("trades").insert(add);if(error)throw error}
-    st.textContent=`Dodano ${add.length} nowych transakcji.`;load();
+    for(const {id,...u} of fix){const {error}=await sb.from("trades").update(u).eq("id",id);if(error)throw error}
+    st.textContent=`Dodano ${add.length} nowych transakcji`+(fix.length?`, uzupełniono ${fix.length} dodanych ze screena (dokładny wynik PLN, SL, TP).`:".");load();
   }catch(err){st.textContent="Import nieudany: "+err.message}
-  e.target.value="";
-};
+}
 
 $("exportJson").onclick=()=>{
   const blob=new Blob([JSON.stringify(trades.map(t=>Object.fromEntries(COLS.map(k=>[k,t[k]??null]))),null,1)],{type:"application/json"});
@@ -440,6 +471,121 @@ $("importJson").onchange=async e=>{
   }catch(err){st.textContent="Wczytanie nieudane: "+err.message}
   e.target.value="";
 };
+
+// Screeny: wiersz z historii XTB jest odczytywany (OCR) do formularza, wykres zapisuje się w Supabase Storage.
+const OCR_HINT=$("ocrStatus").textContent;
+let pendingChart=null, uid=null;
+function ocrMsg(m,bad){$("ocrStatus").textContent=m;$("ocrStatus").className="hint"+(bad?" neg":"")}
+function loadTesseract(){
+  if(window.Tesseract)return Promise.resolve();
+  return new Promise((ok,err)=>{const s=document.createElement("script");s.src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";s.onload=ok;s.onerror=()=>err(new Error("nie wczytał się moduł OCR, sprawdź internet"));document.head.append(s)});
+}
+// Odczyt screena pozycji z XTB. Obraz: powiększenie, szarość, odwrócenie ciemnego tła i progowanie; potem Tesseract.
+async function prepImage(blob,mode,scale){
+  const bmp=await createImageBitmap(blob);
+  const sc=Math.min(scale,Math.max(1,6000/bmp.width));
+  const c=document.createElement("canvas");c.width=Math.round(bmp.width*sc);c.height=Math.round(bmp.height*sc);
+  const g=c.getContext("2d");g.imageSmoothingQuality="high";g.drawImage(bmp,0,0,c.width,c.height);
+  const im=g.getImageData(0,0,c.width,c.height),d=im.data;let sum=0;
+  for(let i=0;i<d.length;i+=4){const v=.299*d[i]+.587*d[i+1]+.114*d[i+2];d[i]=v;sum+=v}
+  const dark=sum/(d.length/4)<128;
+  for(let i=0;i<d.length;i+=4){let v=d[i];if(dark)v=255-v;if(mode==="bin")v=v<175?0:255;d[i]=d[i+1]=d[i+2]=v}
+  g.putImageData(im,0,0);return c;
+}
+let ocrWorker=null;
+async function ocrPass(blob,mode,scale,psm,opts){
+  if(!ocrWorker)ocrWorker=await Tesseract.createWorker("eng",1,opts||{});
+  await ocrWorker.setParameters({tessedit_pageseg_mode:psm,preserve_interword_spaces:"1"});
+  const {data}=await ocrWorker.recognize(await prepImage(blob,mode,scale));return data.text;
+}
+const KNOWN=["GOLD","SILVER","PLATINUM","US500","US100","US30","US2000","DE40","DE30","UK100","FRA40","JP225","EU50","W20","OIL","OIL.WTI","NATGAS","BITCOIN","ETHEREUM","VIX","COPPER"];
+// Pola z tekstu jednego wiersza historii XTB.
+function parseXtb(text){
+  let t=" "+text.replace(/\n/g," ")+" ";
+  const r={};
+  const pids=[...new Set(t.match(/\b\d{9,12}\b/g)||[])];r.pid=pids[0]||null;r.many=pids.length>1;
+  if(r.pid)t=t.split(r.pid).join(" ");
+  const up=t.toUpperCase(), words=up.match(/\b[A-Z][A-Z0-9.]{1,9}\b/g)||[];
+  r.instrument=words.find(w=>KNOWN.includes(w))||words.find(w=>/^[A-Z]{6}$/.test(w)&&!["MOJETR"].includes(w))||null;
+  r.side=/\bSELL\b|SPRZEDA/.test(up)?"SELL":/\bBUY\b|\bKUP/.test(up)?"BUY":null;
+  const dates=[...t.matchAll(/\b(\d{2})[.,](\d{2})[.,](\d{4})\b/g)].map(m=>m.slice(1));t=t.replace(/\b\d{2}[.,]\d{2}[.,]\d{4}\b/g," ");
+  const times=[...t.matchAll(/\b(\d{1,2}):(\d{2})(?::\d{2})?\b/g)].map(m=>m.slice(1));t=t.replace(/\b\d{1,2}:\d{2}(:\d{2})?\b/g," ");
+  const nums=[...t.replace(/(\d),(\d)/g,"$1.$2").matchAll(/(?<![\d.])\d+\.\d+(?![\d.])/g)].map(m=>Number(m[0]));
+  r.volume=nums.find(n=>n>0&&n<50)??null;
+  const prices=nums.filter(n=>n!==r.volume&&n>=1);
+  r.entry_price=prices[0]??null;r.exit_price=prices[1]??null;
+  if(r.entry_price&&r.exit_price&&Math.abs(r.exit_price/r.entry_price-1)>.2)r.exit_price=null;
+  const dt=(d,tm)=>d?new Date(+d[2],+d[1]-1,+d[0],tm?+tm[0]:0,tm?+tm[1]:0).toISOString().slice(0,16):null;
+  r.open_time=dt(dates[0],times[0]);r.close_time=dt(dates[1]||dates[0],times[1]);
+  return r;
+}
+// Dwa przebiegi z różnym przygotowaniem obrazu; drugi uzupełnia braki pierwszego.
+async function readXtbScreenshot(blob,opts){
+  const a=parseXtb(await ocrPass(blob,"bin",4,"11",opts));
+  if(a.pid&&a.instrument&&a.side&&a.volume&&a.entry_price&&a.exit_price&&a.open_time)return a;
+  const b=parseXtb(await ocrPass(blob,"gray",3,"6",opts));
+  for(const k in b)if(a[k]==null)a[k]=b[k];
+  return a;
+}
+
+// Wartość 1 punktu na 1 lot w USD (z Twoich transakcji w XTB); reszta instrumentów: wynik wpisujesz sam.
+const POINT_USD={GOLD:100,US500:50,US100:20};
+let usdpln=null;
+async function getUsdPln(){
+  if(usdpln)return usdpln;
+  try{const r=await fetch("https://api.nbp.pl/api/exchangerates/rates/a/usd/?format=json");usdpln=(await r.json()).rates[0].mid}catch{usdpln=3.7}
+  return usdpln;
+}
+async function handleXtbShot(blob){
+  ocrMsg("Czytam screena… (pierwszy raz trwa kilka sekund)");
+  try{
+    await loadTesseract();
+    const r=await readXtbScreenshot(blob);
+    if(!r.pid&&!r.entry_price)throw new Error("nie widzę tu pozycji z XTB");
+    const ex=r.pid&&trades.find(t=>t.id==="xtb-"+r.pid);
+    if(ex&&!editing){startEdit(ex);ocrMsg("Ta pozycja już jest w dzienniku, otworzyłem ją.");return}
+    const set=(k,v)=>{if(v!=null&&v!==""&&!$("f-"+k).disabled)$("f-"+k).value=v};
+    ["pid","instrument","side","volume","open_time","entry_price","exit_price"].forEach(k=>set(k,r[k]));
+    let est=false;
+    if(!$("f-pnl").value&&r.entry_price&&r.exit_price&&r.volume&&POINT_USD[r.instrument]){
+      const rate=await getUsdPln();
+      $("f-pnl").value=((r.exit_price-r.entry_price)*(r.side==="SELL"?-1:1)*r.volume*POINT_USD[r.instrument]*rate).toFixed(2);est=true;
+    }
+    const names={instrument:"symbol",volume:"wolumen",open_time:"otwarcie",entry_price:"wejście",exit_price:"wyjście",pnl:"wynik PLN"};
+    const miss=Object.keys(names).filter(k=>!$("f-"+k).value).map(k=>names[k]);
+    ocrMsg("Odczytane. Sprawdź pola i dopisz SL/TP."+(est?" Wynik PLN to szacunek po kursie NBP, dokładny wejdzie przy imporcie pliku z XTB.":"")+(r.many?" Na screenie było kilka pozycji, wziąłem pierwszą.":"")+(miss.length?" Brakuje: "+miss.join(", ")+".":""));
+  }catch(err){ocrMsg("Nie udało się odczytać: "+err.message,true)}
+}
+function setChart(blob){
+  pendingChart=blob;$("chartPrev").src=URL.createObjectURL(blob);$("chartPrev").hidden=false;
+  ocrMsg("Wykres doczepiony. Zapisze się razem z transakcją.");
+}
+// Wąski, szeroki pasek to wiersz z historii XTB; wszystko inne traktuję jak wykres.
+async function routeImage(blob){
+  if($("sheet").hidden){resetForm();openSheet()}
+  const b=await createImageBitmap(blob);
+  if(b.width/b.height>5)handleXtbShot(blob);else setChart(blob);
+}
+$("pickXtb").onclick=()=>$("xtbFile").click();
+$("pickChart").onclick=()=>$("chartFile").click();
+$("xtbFile").onchange=e=>{const f=e.target.files[0];if(f)handleXtbShot(f);e.target.value=""};
+$("chartFile").onchange=e=>{const f=e.target.files[0];if(f)setChart(f);e.target.value=""};
+$("shotBtn").onclick=()=>{resetForm();openSheet();$("xtbFile").click()};
+$("chartPrev").onclick=()=>{if($("chartPrev").src)window.open($("chartPrev").src,"_blank")};
+document.addEventListener("paste",e=>{
+  if($("v-app").hidden)return;
+  const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith("image/"));
+  if(!it)return;e.preventDefault();routeImage(it.getAsFile());
+});
+let dragDepth=0;
+addEventListener("dragenter",e=>{if(!$("v-app").hidden&&e.dataTransfer?.types?.includes("Files")){dragDepth++;document.body.classList.add("dragging")}});
+addEventListener("dragleave",()=>{if(--dragDepth<=0){dragDepth=0;document.body.classList.remove("dragging")}});
+addEventListener("dragover",e=>{if(!$("v-app").hidden)e.preventDefault()});
+addEventListener("drop",e=>{
+  if($("v-app").hidden)return;e.preventDefault();dragDepth=0;document.body.classList.remove("dragging");
+  const f=[...(e.dataTransfer?.files||[])][0];if(!f)return;
+  if(f.type.startsWith("image/"))routeImage(f);else if(/\.xlsx?$/i.test(f.name))importXlsx(f);
+});
 
 // Logowanie
 async function auth(kind){
@@ -459,7 +605,7 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!$("v-app
 if(!cfg.supabaseUrl||!cfg.supabaseAnonKey||!window.supabase){show("v-config")}
 else{
   sb=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey);
-  sb.auth.onAuthStateChange((_ev,session)=>{if(session){show("v-app");load()}else{trades=[];show("v-login")}});
+  sb.auth.onAuthStateChange((_ev,session)=>{uid=session?.user?.id||null;if(session){show("v-app");load()}else{trades=[];show("v-login")}});
 }
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>

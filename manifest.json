@@ -1,15 +1,24 @@
 {
-  "name": "Dziennik Tradera",
-  "short_name": "Dziennik",
+  "name": "tape — dziennik tradera",
+  "short_name": "tape",
   "description": "Dziennik transakcji z importem z XTB",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0f141a",
-  "theme_color": "#0b0c0e",
+  "background_color": "#131722",
+  "theme_color": "#131722",
   "lang": "pl",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }

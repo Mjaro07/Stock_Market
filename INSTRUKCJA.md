@@ -63,6 +63,7 @@ Na drugim komputerze otwórz ten sam adres, zaloguj się tym samym e-mailem i za
 ## Na co dzień
 
 - **Nowe transakcje z XTB:** w xStation wybierz *Historia konta* → *Eksportuj* (.xlsx), a potem w aplikacji *Import z XTB*. Dodadzą się tylko nowe pozycje, a Twoje notatki zostaną.
+- **Transakcja ze screena:** zrób zrzut wiersza z *Historii* w xStation i wklej go w aplikacji (Ctrl+V), przeciągnij albo kliknij *Screen*. Pola wypełnią się same, a Ty sprawdzasz je i klikasz *Zapisz*. Wklejony zrzut wykresu (np. z TradingView) doczepi się do otwartej transakcji. Wynik PLN ze screena jest szacunkiem i poprawi się sam przy imporcie pliku z XTB. Wymaga jednorazowego uruchomienia `supabase-screeny.sql`.
 - **Notatki:** kliknij wiersz w tabeli, dopisz setup, emocje i to, czy złamałeś zasadę, a potem kliknij *Zapisz*.
 - **Kopia zapasowa:** raz w miesiącu kliknij *Pobierz kopię (.json)*.
 - **Zmiana aplikacji** (np. innych zasad): edytujesz `index.html` na GitHubie (ikona ołówka) i klikasz *Commit*. Strona zaktualizuje się po około minucie.
